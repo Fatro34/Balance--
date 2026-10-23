@@ -55,15 +55,24 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .item[open]>summary{border-bottom:1px solid var(--line)}
 .item .chip{margin-right:8px;font-weight:400}
 .item .back{padding-bottom:14px}
+#train{display:none}.mt #train{display:block}.mt #card,.mt .nav,.mt .top,.mt #chips{display:none}
+.pri{background:var(--acc);color:var(--bg);border-color:var(--acc);font-weight:600}
+.bar{height:6px;background:var(--line);border-radius:9px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--acc)}
+.row{display:flex;gap:8px;margin-top:14px}.row button{flex:1}
+.tbox{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+.tbox h1,.tbox h2{margin:4px 0 10px}.tbox p{margin:8px 0}.mute{color:var(--mute);font-size:14px}
+.big{font-size:26px;font-weight:700;text-align:center;margin:26px 0;overflow-wrap:anywhere}
+.ok{background:#2e7d4f;color:#fff;border-color:#2e7d4f}.no{background:#b3402f;color:#fff;border-color:#b3402f}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="tabs"><button id="tabC" class="on">Карточки</button><button id="tabL">Список</button></div>
+  <div class="tabs"><button id="tabC" class="on">Карточки</button><button id="tabL">Список</button><button id="tabT">Тренировка</button></div>
   <div class="top"><select id="cat" aria-label="Раздел"></select><button id="fold">Свернуть все</button><span class="cnt" id="cnt"></span></div>
   <div id="chips"></div>
   <div class="card" id="card" role="button" tabindex="0"></div>
   <div id="list"></div>
+  <div id="train"></div>
 </div>
 <div class="nav">
   <button id="prev" aria-label="Назад">←</button>
@@ -147,13 +156,79 @@ function buildList(){
   });
 }
 function setMode(m){
-  mode=m;document.body.classList.toggle("ml",m==="list");
-  $("tabC").classList.toggle("on",m==="card");$("tabL").classList.toggle("on",m==="list");
-  if(m==="list"){const c=$("cat").value;$("cnt").textContent=DATA.filter(d=>c==="Все"||d.cat===c).length+" шт."}else render();
+  mode=m;document.body.classList.toggle("ml",m==="list");document.body.classList.toggle("mt",m==="train");
+  $("tabC").classList.toggle("on",m==="card");$("tabL").classList.toggle("on",m==="list");$("tabT").classList.toggle("on",m==="train");
+  if(m==="list"){const c=$("cat").value;$("cnt").textContent=DATA.filter(d=>c==="Все"||d.cat===c).length+" шт."}else if(m==="train")trainHome();else render();
   window.scrollTo(0,0);
 }
 $("tabC").onclick=()=>setMode("card");$("tabL").onclick=()=>setMode("list");
 $("fold").onclick=()=>{const all=[...document.querySelectorAll("details.item")],o=all.some(x=>x.open);all.forEach(x=>x.open=!o);$("fold").textContent=o?"Развернуть все":"Свернуть все"};
+$("tabT").onclick=()=>setMode("train");
+const SK="ttk_progress_v1",DAYS=[0,1,3,7,14],DAY=864e5;
+let P={};try{P=JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){}
+const save=()=>{try{localStorage.setItem(SK,JSON.stringify(P))}catch(e){}};
+const mix=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const TD=[],seenK=new Set();DATA.forEach(d=>{const k=d.title+JSON.stringify(d.ings);if(!seenK.has(k)){seenK.add(k);TD.push(d)}});
+let S=null,rst=false;
+function btn(txt,cls,fn){const b=el("button",cls||"",txt);b.onclick=fn;return b}
+function row(...b){const r=el("div","row");b.forEach(x=>r.appendChild(x));return r}
+function fmt(ms){const s=Math.floor(ms/1e3);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
+function trainHome(){
+  if(S&&S.tm)clearInterval(S.tm);S=null;
+  const T=$("train");T.textContent="";const now=Date.now(),b=el("div","tbox");
+  const nw=TD.filter(d=>!P[d.id]),due=TD.filter(d=>P[d.id]&&P[d.id].due<=now),kn=TD.filter(d=>P[d.id]&&P[d.id].b>=2);
+  b.appendChild(el("h1",null,"Тренировка"));
+  b.appendChild(el("p",null,"Новые: "+nw.length+"  ·  Учу: "+(TD.length-nw.length-kn.length)+"  ·  Знаю: "+kn.length));
+  b.appendChild(el("div","lbl","Как это работает"));
+  ["1. Блок из 5 карточек: читаешь, закрываешь, пересказываешь вслух состав и граммовки.","2. Сразу проверка этого блока без подсказки. Не вспомнил — карточка вернётся через несколько штук.","3. Финальный круг: все карточки вперемешку. Это то, что фиксирует память.","4. Завтра и дальше: кнопка «Повтор на сегодня». Карточки приходят через 1, 3, 7, 14 дней."].forEach(x=>b.appendChild(el("p","mute",x)));
+  if(nw.length)b.appendChild(row(btn("Учить новые: "+nw.length+" шт., около "+nw.length*2+" мин","pri",()=>startNew(nw))));
+  if(due.length)b.appendChild(row(btn("Повтор на сегодня: "+due.length,nw.length?"":"pri",()=>start(mix(due).map(d=>({d,k:"final"})),"Повтор"))));
+  const r=btn(rst?"Точно сбросить?":"Сбросить прогресс","",()=>{if(!rst){rst=true;trainHome();return}rst=false;P={};save();trainHome()});
+  b.appendChild(row(r));T.appendChild(b);
+}
+function startNew(cards){
+  const q=[],nb=Math.ceil(cards.length/5);
+  for(let i=0;i<nb;i++){const bl=cards.slice(i*5,i*5+5);bl.forEach(d=>q.push({d,k:"study",bi:i+1,nb}));mix(bl).forEach(d=>q.push({d,k:"test",bi:i+1,nb}))}
+  mix(cards).forEach(d=>q.push({d,k:"final"}));start(q,"Новые");
+}
+function start(q,name){S={q,i:0,t0:Date.now(),miss:0,name,show:false,hint:false};S.tm=setInterval(()=>{const e=$("tm");if(e)e.textContent=fmt(Date.now()-S.t0)},1000);run()}
+function run(){
+  const T=$("train");T.textContent="";
+  if(S.i>=S.q.length){done();return}
+  const it=S.q[S.i],d=it.d,b=el("div","tbox");
+  const lab=it.k==="study"?"Блок "+it.bi+" из "+it.nb+" · Изучение":it.k==="test"?"Блок "+it.bi+" из "+it.nb+" · Проверка":S.name==="Новые"?"Финальный круг":"Повтор";
+  const h=el("div","mute");h.textContent=lab+"  ·  ";const tm=el("span",null,fmt(Date.now()-S.t0));tm.id="tm";h.appendChild(tm);b.appendChild(h);
+  const bar=el("div","bar"),i=document.createElement("i");i.style.width=Math.round(S.i/S.q.length*100)+"%";bar.appendChild(i);b.appendChild(bar);
+  if(it.k==="study"){
+    b.appendChild(backNode(d));
+    b.appendChild(el("p","mute","Прочитай. Закрой глаза и пересказывай вслух состав и граммовки. Потом дальше."));
+    b.appendChild(row(btn("Дальше","pri",()=>{S.i++;run();window.scrollTo(0,0)})));
+  }else{
+    b.appendChild(el("div","chip",d.cat));b.appendChild(el("div","big",d.title));
+    if(!S.show){
+      b.appendChild(el("p","mute","Вспомни состав и граммовки, вслух или в уме. Только потом смотри ответ."));
+      if(S.hint){const l=el("div","t",d.ings.map(r=>"• "+r[0]).join("\n"));b.appendChild(l)}
+      b.appendChild(row(btn("Подсказка","",()=>{S.hint=true;run()}),btn("Показать ответ","pri",()=>{S.show=true;run()})));
+    }else{
+      b.appendChild(backNode(d,true));
+      b.appendChild(row(btn("Не знаю","no",()=>ans(false)),btn("Знаю всё","ok",()=>ans(true))));
+    }
+  }
+  T.appendChild(b);
+}
+function ans(ok){
+  const it=S.q[S.i],d=it.d;
+  if(it.k==="final"&&!it.again){const p=P[d.id]||{b:0,due:0};if(ok&&!S.hint)p.b=Math.min(p.b+1,4);else if(!ok)p.b=0;p.due=Date.now()+DAYS[p.b]*DAY;P[d.id]=p;save()}
+  if(!ok){S.miss++;S.q.splice(Math.min(S.i+5,S.q.length),0,{d,k:it.k,bi:it.bi,nb:it.nb,again:true})}
+  S.i++;S.show=false;S.hint=false;run();window.scrollTo(0,0);
+}
+function done(){
+  clearInterval(S.tm);const T=$("train");T.textContent="";const b=el("div","tbox");
+  b.appendChild(el("h1",null,"Сессия закончена"));
+  b.appendChild(el("p",null,"Время: "+fmt(Date.now()-S.t0)+"  ·  Промахов: "+S.miss));
+  b.appendChild(el("p","mute","Вернись завтра и нажми «Повтор на сегодня». Именно это превращает «выучил» в «помню»."));
+  b.appendChild(row(btn("На главную","pri",trainHome)));T.appendChild(b);
+}
 render();buildList();
 </script>
 </body>
